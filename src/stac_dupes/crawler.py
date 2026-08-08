@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import time
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -16,6 +17,21 @@ from stac_dupes import db
 
 INVALID_TOKEN_ATTEMPTS = 5
 MAX_ERROR_BODY_LENGTH = 2_000
+START_RECORD_LIMIT = re.compile(
+    r"startRecord\s+can(?:not| not)\s+exceed\s+(\d+)", re.IGNORECASE
+)
+
+
+class CatalogResultLimitError(ValueError):
+    """The catalog cannot page through the complete result set."""
+
+    def __init__(self, matched: int, limit: int) -> None:
+        super().__init__(
+            f"Search matches {matched} items, but the catalog only allows access to "
+            f"the first {limit}."
+        )
+        self.matched = matched
+        self.limit = limit
 
 
 class CrawlError(RuntimeError):
@@ -157,6 +173,7 @@ def _initial_pages(run: dict[str, Any]) -> Iterator[dict[str, Any]]:
     if first_page is None:
         return
 
+    _check_result_window(first_page, _search_body(run))
     yield first_page
     next_link = _find_next_link(first_page)
     if next_link is not None:
@@ -221,6 +238,35 @@ def _is_invalid_token_response(response: requests.Response) -> bool:
     )
 
 
+def _check_result_window(page: dict[str, Any], search_body: dict[str, Any]) -> None:
+    """Probe whether the catalog can reach the final matched record."""
+    matched = page.get("numberMatched")
+    next_link = _find_next_link(page)
+    if not isinstance(matched, int) or next_link is None:
+        return
+
+    method = str(next_link.get("method", "GET")).upper()
+    request_args: dict[str, Any] = {
+        "method": method,
+        "url": next_link["href"],
+        "headers": next_link.get("headers"),
+        "timeout": 60,
+    }
+    probe_body = {**search_body, "limit": 1, "startRecord": matched}
+    if method == "GET":
+        request_args["params"] = probe_body
+    else:
+        request_args["json"] = probe_body
+    try:
+        response = requests.request(**request_args)
+    except requests.RequestException:
+        return
+
+    limit = _start_record_limit(response)
+    if limit is not None and matched > limit:
+        raise CatalogResultLimitError(matched, limit)
+
+
 def _describe_error(error: Exception) -> str:
     """Return actionable request details without exposing request headers or bodies."""
     details = [f"Cause: {type(error).__name__}: {error}"]
@@ -253,11 +299,12 @@ def _describe_error(error: Exception) -> str:
 
 
 def _restart_guidance(run_id: int, error: Exception) -> str:
-    if _is_start_record_limit_error(error):
+    limit = _result_limit_from_error(error)
+    if limit is not None:
         return (
-            "This catalog limits a single search to 100,000 records, so resuming or "
-            "re-crawling this run will fail again. Start new runs with disjoint CQL2 "
-            "filters that each match no more than 100,000 items."
+            f"This catalog limits a single search to {limit:,} records, so resuming "
+            "or re-crawling this run will fail again. Start new runs with disjoint "
+            f"CQL2 filters that each match no more than {limit:,} items."
         )
     return (
         "Resume from the last saved checkpoint with:\n"
@@ -265,16 +312,26 @@ def _restart_guidance(run_id: int, error: Exception) -> str:
     )
 
 
-def _is_start_record_limit_error(error: Exception) -> bool:
+def _result_limit_from_error(error: Exception) -> int | None:
+    if isinstance(error, CatalogResultLimitError):
+        return error.limit
     if not isinstance(error, requests.HTTPError) or error.response is None:
-        return False
+        return None
+
+    return _start_record_limit(error.response)
+
+
+def _start_record_limit(response: requests.Response) -> int | None:
     try:
-        payload = error.response.json()
+        payload = response.json()
     except requests.JSONDecodeError:
-        return False
+        return None
     api_error = payload.get("error") if isinstance(payload, dict) else None
     message = api_error.get("message") if isinstance(api_error, dict) else None
-    return isinstance(message, str) and "startRecord can not exceed" in message
+    if not isinstance(message, str):
+        return None
+    match = START_RECORD_LIMIT.search(message)
+    return int(match.group(1)) if match else None
 
 
 def _find_next_link(page: dict[str, Any]) -> dict[str, Any] | None:

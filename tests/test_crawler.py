@@ -69,6 +69,58 @@ def test_initial_pages_use_retryable_pagination(monkeypatch) -> None:
     assert list(crawler._initial_pages(run)) == [first_page, second_page]
 
 
+def test_initial_pages_stop_before_ingestion_when_results_exceed_cap(
+    monkeypatch,
+) -> None:
+    next_link = {
+        "rel": "next",
+        "href": "https://example.test/search",
+        "method": "POST",
+    }
+    first_page = {
+        "numberMatched": 239_354,
+        "features": [{"id": "first"}],
+        "links": [next_link],
+    }
+    run = {
+        "catalog_url": "https://example.test",
+        "cql2_filter": {},
+        "collections": ["large-collection"],
+        "page_size": 100,
+    }
+    response = requests.Response()
+    response.status_code = 422
+    response._content = b'{"error":{"message":"startRecord can not exceed 100000."}}'
+    request_args: dict[str, Any] = {}
+
+    class Search:
+        def pages_as_dicts(self):
+            yield first_page
+
+    class Client:
+        def search(self, **kwargs: Any) -> Search:
+            return Search()
+
+    def request(**kwargs: Any) -> requests.Response:
+        request_args.update(kwargs)
+        return response
+
+    monkeypatch.setattr(crawler.Client, "open", lambda url: Client())
+    monkeypatch.setattr(crawler.requests, "request", request)
+
+    with pytest.raises(
+        crawler.CatalogResultLimitError,
+        match="matches 239354 items.*first 100000",
+    ) as raised:
+        list(crawler._initial_pages(run))
+
+    assert request_args["json"]["startRecord"] == 239_354
+    assert request_args["json"]["limit"] == 1
+    guidance = str(crawler.CrawlError(14, 0, 0, raised.value))
+    assert "disjoint CQL2 filters" in guidance
+    assert "stac-dupes crawl --run-id 14" not in guidance
+
+
 def test_request_link_retries_invalid_pagination_token(monkeypatch) -> None:
     invalid = requests.Response()
     invalid.status_code = 400

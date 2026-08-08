@@ -56,6 +56,8 @@ completed run is a no-op unless `--re-crawl` is supplied.
 The normalized `processing_baseline` column is populated from the STAC Item's
 `properties.version` value. Different processing baselines are excluded from
 duplicate candidates. Two items without a baseline may still be candidates.
+The normalized `product_type` column is populated from `properties["product:type"]`;
+duplicate candidates must also have matching product types.
 
 For prompted input, run:
 

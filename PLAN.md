@@ -25,6 +25,9 @@ representation (for example, `02`). It does not change item identity. Duplicate 
 queries require baselines to be equal using `IS NOT DISTINCT FROM`, so different baselines
 are excluded while two items with unknown baselines can still be compared.
 
+Product type is normalized from `properties["product:type"]` into `product_type`. Duplicate
+candidate queries require product types to match using the same null-aware comparison.
+
 ## Migrations and future detection criteria
 
 `stac-dupes init-db` applies packaged, numbered migrations and records each migration in

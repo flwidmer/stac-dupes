@@ -139,6 +139,7 @@ def ingest_page(
         properties = item.get("properties") or {}
         sensing_start, sensing_end = sensing_times(properties)
         baseline = processing_baseline(properties)
+        item_product_type = product_type(properties)
         geometry = item.get("geometry")
         item_rows.append(
             (
@@ -147,6 +148,7 @@ def ingest_page(
                 item["id"],
                 item.get("collection"),
                 baseline,
+                item_product_type,
                 json.dumps(geometry) if geometry is not None else None,
                 sensing_start,
                 sensing_end,
@@ -167,17 +169,18 @@ def ingest_page(
                     """
                     INSERT INTO items (
                         ingest_run_id, catalog_url, stac_id, collection_id,
-                        processing_baseline,
+                        processing_baseline, product_type,
                         geometry, sensing_start, sensing_end, item
                     )
                     VALUES (
-                        %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s, %s, %s,
                         ST_SetSRID(ST_GeomFromGeoJSON(%s), 4326), %s, %s, %s
                     )
                     ON CONFLICT (catalog_url, stac_id) DO UPDATE SET
                         ingest_run_id = EXCLUDED.ingest_run_id,
                         collection_id = EXCLUDED.collection_id,
                         processing_baseline = EXCLUDED.processing_baseline,
+                        product_type = EXCLUDED.product_type,
                         geometry = EXCLUDED.geometry,
                         sensing_start = EXCLUDED.sensing_start,
                         sensing_end = EXCLUDED.sensing_end,
@@ -239,6 +242,12 @@ def sensing_times(properties: dict[str, Any]) -> tuple[datetime | None, datetime
 def processing_baseline(properties: dict[str, Any]) -> str | None:
     """Extract the processing baseline while preserving textual versions."""
     value = properties.get("version")
+    return str(value) if value is not None else None
+
+
+def product_type(properties: dict[str, Any]) -> str | None:
+    """Extract the STAC product type as text."""
+    value = properties.get("product:type")
     return str(value) if value is not None else None
 
 

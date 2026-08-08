@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from stac_dupes.db import processing_baseline, sensing_times
+from stac_dupes.db import processing_baseline, product_type, sensing_times
 
 
 def test_sensing_times_uses_datetime_as_instant() -> None:
@@ -32,3 +32,11 @@ def test_processing_baseline_preserves_text_version() -> None:
 
 def test_processing_baseline_allows_missing_version() -> None:
     assert processing_baseline({}) is None
+
+
+def test_product_type_uses_namespaced_property() -> None:
+    assert product_type({"product:type": "FP_GN__L2A"}) == "FP_GN__L2A"
+
+
+def test_product_type_allows_missing_property() -> None:
+    assert product_type({}) is None

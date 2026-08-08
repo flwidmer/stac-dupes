@@ -22,7 +22,8 @@ poetry run stac-dupes crawl \
 
 The MAAP query currently matches about 9,720 Items. Only STAC metadata is read;
 the protected product assets are not downloaded. The processing baseline is read
-from `properties.version` and stored in `items.processing_baseline`.
+from `properties.version` and stored in `items.processing_baseline`. Product type is
+read from `properties["product:type"]` and stored in `items.product_type`.
 
 ## Resume or re-crawl
 
@@ -52,10 +53,10 @@ SELECT id, status, state, started_at, finished_at
 FROM ingest_runs
 ORDER BY id DESC;
 
-SELECT collection_id, processing_baseline, count(*)
+SELECT collection_id, product_type, processing_baseline, count(*)
 FROM items
-GROUP BY collection_id, processing_baseline
-ORDER BY collection_id, processing_baseline;
+GROUP BY collection_id, product_type, processing_baseline
+ORDER BY collection_id, product_type, processing_baseline;
 ```
 
 Run the exploratory duplicate checks from the host:
@@ -65,7 +66,8 @@ docker compose exec -T db psql -U stacdupes -d stacdupes < sql/checks.sql
 ```
 
 These checks only compare items with the same processing baseline. Two missing
-baselines compare as equal; a missing and a known baseline do not.
+baselines compare as equal; a missing and a known baseline do not. Product types
+must match under the same rule.
 
 ## Stop PostGIS
 

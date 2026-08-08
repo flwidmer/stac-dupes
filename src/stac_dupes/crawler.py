@@ -115,7 +115,7 @@ def crawl(
     )
     try:
         pages = (
-            _pages_from_link(next_link, search_body)
+            _pages_from_link(next_link, search_body, start_record=seen + 1)
             if next_link is not None
             else _initial_pages(run)
         )
@@ -162,33 +162,72 @@ def crawl(
 
 def _initial_pages(run: dict[str, Any]) -> Iterator[dict[str, Any]]:
     client = Client.open(run["catalog_url"])
-    search = client.search(
-        filter=run["cql2_filter"],
-        filter_lang="cql2-json",
-        collections=run["collections"] or None,
-        limit=run["page_size"],
-    )
-    pages = search.pages_as_dicts()
+    pages = _search_pages(client, run)
     first_page = next(pages, None)
     if first_page is None:
         return
 
-    _check_result_window(first_page, _search_body(run))
+    search_body = _search_body(run)
+    if _check_result_window(first_page, search_body):
+        # MAAP invalidates an existing token when the same search is run again.
+        pages = _search_pages(client, run)
+        first_page = next(pages, None)
+        if first_page is None:
+            return
+
     yield first_page
     next_link = _find_next_link(first_page)
     if next_link is not None:
-        yield from _pages_from_link(next_link, _search_body(run))
+        yield from _pages_from_link(
+            next_link,
+            search_body,
+            start_record=len(first_page.get("features") or []) + 1,
+        )
+
+
+def _search_pages(client: Client, run: dict[str, Any]) -> Iterator[dict[str, Any]]:
+    search_args: dict[str, Any] = {
+        "collections": run["collections"] or None,
+        "limit": run["page_size"],
+    }
+    if run["cql2_filter"]:
+        search_args["filter"] = run["cql2_filter"]
+        search_args["filter_lang"] = "cql2-json"
+    return client.search(**search_args).pages_as_dicts()
 
 
 def _pages_from_link(
-    link: dict[str, Any], search_body: dict[str, Any]
+    link: dict[str, Any],
+    search_body: dict[str, Any],
+    *,
+    start_record: int = 1,
 ) -> Iterator[dict[str, Any]]:
     session = requests.Session()
     current: dict[str, Any] | None = link
     while current is not None:
-        page = _request_link(session, current, search_body)
+        try:
+            page = _request_link(session, current, search_body)
+        except requests.HTTPError as error:
+            if error.response is None or not _is_invalid_token_response(error.response):
+                raise
+            page = _request_offset(session, current, search_body, start_record)
         yield page
+        start_record += len(page.get("features") or [])
         current = _find_next_link(page)
+
+
+def _request_offset(
+    session: requests.Session,
+    link: dict[str, Any],
+    search_body: dict[str, Any],
+    start_record: int,
+) -> dict[str, Any]:
+    offset_link = {
+        **link,
+        "body": {**search_body, "startRecord": start_record},
+        "merge": False,
+    }
+    return _request_link(session, offset_link, {})
 
 
 def _request_link(
@@ -238,12 +277,12 @@ def _is_invalid_token_response(response: requests.Response) -> bool:
     )
 
 
-def _check_result_window(page: dict[str, Any], search_body: dict[str, Any]) -> None:
+def _check_result_window(page: dict[str, Any], search_body: dict[str, Any]) -> bool:
     """Probe whether the catalog can reach the final matched record."""
     matched = page.get("numberMatched")
     next_link = _find_next_link(page)
     if not isinstance(matched, int) or next_link is None:
-        return
+        return False
 
     method = str(next_link.get("method", "GET")).upper()
     request_args: dict[str, Any] = {
@@ -260,11 +299,12 @@ def _check_result_window(page: dict[str, Any], search_body: dict[str, Any]) -> N
     try:
         response = requests.request(**request_args)
     except requests.RequestException:
-        return
+        return False
 
     limit = _start_record_limit(response)
     if limit is not None and matched > limit:
         raise CatalogResultLimitError(matched, limit)
+    return True
 
 
 def _describe_error(error: Exception) -> str:
@@ -343,10 +383,11 @@ def _find_next_link(page: dict[str, Any]) -> dict[str, Any] | None:
 
 def _search_body(run: dict[str, Any]) -> dict[str, Any]:
     body: dict[str, Any] = {
-        "filter": run["cql2_filter"],
-        "filter-lang": "cql2-json",
         "limit": run["page_size"],
     }
+    if run["cql2_filter"]:
+        body["filter"] = run["cql2_filter"]
+        body["filter-lang"] = "cql2-json"
     if run["collections"]:
         body["collections"] = run["collections"]
     return body

@@ -36,6 +36,14 @@ poetry run ruff format .
 
 ## Crawl
 
+To crawl every item in a collection without a CQL2 filter:
+
+```shell
+poetry run stac-dupes crawl \
+  --url https://example.test/stac \
+  --collection sentinel-2
+```
+
 Pass a CQL2 JSON object inline:
 
 ```shell

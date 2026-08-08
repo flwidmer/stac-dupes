@@ -63,10 +63,81 @@ def test_initial_pages_use_retryable_pagination(monkeypatch) -> None:
     monkeypatch.setattr(
         crawler,
         "_pages_from_link",
-        lambda link, search_body: iter([second_page]),
+        lambda link, search_body, **kwargs: iter([second_page]),
     )
+    monkeypatch.setattr(crawler, "_check_result_window", lambda page, body: False)
 
     assert list(crawler._initial_pages(run)) == [first_page, second_page]
+
+
+def test_initial_pages_refresh_search_after_result_limit_probe(monkeypatch) -> None:
+    next_link = {"rel": "next", "href": "https://example.test/search"}
+    pages = [
+        {"features": [{"id": "stale"}], "links": [next_link]},
+        {"features": [{"id": "fresh"}], "links": []},
+    ]
+    run = {
+        "catalog_url": "https://example.test",
+        "cql2_filter": {},
+        "collections": ["example"],
+        "page_size": 100,
+    }
+
+    class Search:
+        def __init__(self, page: dict[str, Any]) -> None:
+            self.page = page
+
+        def pages_as_dicts(self):
+            yield self.page
+
+    class Client:
+        def search(self, **kwargs: Any) -> Search:
+            return Search(pages.pop(0))
+
+    monkeypatch.setattr(crawler.Client, "open", lambda url: Client())
+    monkeypatch.setattr(crawler, "_check_result_window", lambda page, body: True)
+
+    assert list(crawler._initial_pages(run)) == [
+        {"features": [{"id": "fresh"}], "links": []}
+    ]
+    assert pages == []
+
+
+def test_pages_fall_back_to_offset_when_token_expires(monkeypatch) -> None:
+    token_link = {
+        "rel": "next",
+        "href": "https://example.test/search",
+        "method": "POST",
+        "body": {"token": "expired"},
+    }
+    offset_page = {"features": [{"id": "recovered"}], "links": []}
+    calls: list[dict[str, Any]] = []
+
+    def request_link(session: Any, link: dict, search_body: dict) -> dict:
+        calls.append(link)
+        if link["body"].get("token"):
+            response = requests.Response()
+            response.status_code = 400
+            response._content = b'{"error":{"message":"Invalid token: expired"}}'
+            raise requests.HTTPError("invalid token", response=response)
+        return offset_page
+
+    monkeypatch.setattr(crawler, "_request_link", request_link)
+
+    pages = list(
+        crawler._pages_from_link(
+            token_link,
+            {"collections": ["example"], "limit": 100},
+            start_record=5_901,
+        )
+    )
+
+    assert pages == [offset_page]
+    assert calls[1]["body"] == {
+        "collections": ["example"],
+        "limit": 100,
+        "startRecord": 5_901,
+    }
 
 
 def test_initial_pages_stop_before_ingestion_when_results_exceed_cap(

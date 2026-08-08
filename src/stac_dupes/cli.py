@@ -48,7 +48,7 @@ def init_db(database_url: str) -> None:
 @click.option("--url", help="STAC API root URL for a new run.")
 @click.option(
     "--query",
-    help="CQL2 JSON text or @path/to/filter.json for a new run.",
+    help="Optional CQL2 JSON text or @path/to/filter.json for a new run.",
 )
 @click.option(
     "--collection",
@@ -82,9 +82,11 @@ def crawl_command(
     if re_crawl and run_id is None:
         raise click.UsageError("--re-crawl requires --run-id")
     if run_id is None:
-        if url is None or query is None:
-            raise click.UsageError("--url and --query are required for a new run")
-        cql2_filter = parse_query(query)
+        if url is None:
+            raise click.UsageError("--url is required for a new run")
+        if query is None and not collections:
+            raise click.UsageError("--query or --collection is required for a new run")
+        cql2_filter = parse_query(query) if query is not None else {}
     else:
         if url is not None or query is not None or collections:
             raise click.UsageError(

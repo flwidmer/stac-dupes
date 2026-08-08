@@ -54,7 +54,8 @@ poetry run stac-dupes crawl \
 ```
 
 Every processed page and its complete `rel=next` link are committed together. If
-a crawl fails, resume from the saved page:
+a crawl fails, resume from the saved page. Transient rejections of a freshly
+issued pagination token are retried automatically:
 
 ```shell
 poetry run stac-dupes crawl --run-id 12
@@ -79,6 +80,13 @@ For prompted input, run:
 
 ```shell
 poetry run stac-dupes interactive
+```
+
+For a notebook-driven crawl, open `notebooks/crawl.ipynb`. It contains editable
+catalog and CQL2 settings and can start, resume, or re-crawl an ingestion run:
+
+```shell
+poetry run jupyter lab notebooks/crawl.ipynb
 ```
 
 ## Explore duplicates

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Any
@@ -12,6 +13,8 @@ from pystac_client import Client
 from tqdm import tqdm
 
 from stac_dupes import db
+
+INVALID_TOKEN_ATTEMPTS = 5
 
 
 @dataclass(frozen=True)
@@ -118,7 +121,15 @@ def _initial_pages(run: dict[str, Any]) -> Iterator[dict[str, Any]]:
         collections=run["collections"] or None,
         limit=run["page_size"],
     )
-    yield from search.pages_as_dicts()
+    pages = search.pages_as_dicts()
+    first_page = next(pages, None)
+    if first_page is None:
+        return
+
+    yield first_page
+    next_link = _find_next_link(first_page)
+    if next_link is not None:
+        yield from _pages_from_link(next_link, _search_body(run))
 
 
 def _pages_from_link(
@@ -152,9 +163,31 @@ def _request_link(
         request_args["params"] = body
     else:
         request_args["json"] = body
-    response = session.request(**request_args)
-    response.raise_for_status()
-    return response.json()
+    for attempt in range(INVALID_TOKEN_ATTEMPTS):
+        response = session.request(**request_args)
+        if (
+            not _is_invalid_token_response(response)
+            or attempt == INVALID_TOKEN_ATTEMPTS - 1
+        ):
+            response.raise_for_status()
+            return response.json()
+        time.sleep(0.25 * 2**attempt)
+
+    raise AssertionError("pagination retry loop did not return")
+
+
+def _is_invalid_token_response(response: requests.Response) -> bool:
+    """Identify the transient pagination-token response returned by MAAP."""
+    if response.status_code != 400:
+        return False
+    try:
+        payload = response.json()
+    except requests.JSONDecodeError:
+        return False
+    error = payload.get("error") if isinstance(payload, dict) else None
+    return isinstance(error, dict) and str(error.get("message", "")).startswith(
+        "Invalid token:"
+    )
 
 
 def _find_next_link(page: dict[str, Any]) -> dict[str, Any] | None:

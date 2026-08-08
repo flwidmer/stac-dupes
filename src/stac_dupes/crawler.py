@@ -32,8 +32,7 @@ class CrawlError(RuntimeError):
             f"Crawl run {run_id} failed.",
             f"Last saved checkpoint: {seen} item(s) seen, {ingested} item(s) ingested.",
             _describe_error(error),
-            "Resume from the last saved checkpoint with:",
-            f"  stac-dupes crawl --run-id {run_id}",
+            _restart_guidance(run_id, error),
         ]
         super().__init__("\n".join(details))
         self.run_id = run_id
@@ -251,6 +250,31 @@ def _describe_error(error: Exception) -> str:
                 body = f"{body[:MAX_ERROR_BODY_LENGTH]}... [truncated]"
             details.append(f"Response body:\n{body}")
     return "\n".join(details)
+
+
+def _restart_guidance(run_id: int, error: Exception) -> str:
+    if _is_start_record_limit_error(error):
+        return (
+            "This catalog limits a single search to 100,000 records, so resuming or "
+            "re-crawling this run will fail again. Start new runs with disjoint CQL2 "
+            "filters that each match no more than 100,000 items."
+        )
+    return (
+        "Resume from the last saved checkpoint with:\n"
+        f"  stac-dupes crawl --run-id {run_id}"
+    )
+
+
+def _is_start_record_limit_error(error: Exception) -> bool:
+    if not isinstance(error, requests.HTTPError) or error.response is None:
+        return False
+    try:
+        payload = error.response.json()
+    except requests.JSONDecodeError:
+        return False
+    api_error = payload.get("error") if isinstance(payload, dict) else None
+    message = api_error.get("message") if isinstance(api_error, dict) else None
+    return isinstance(message, str) and "startRecord can not exceed" in message
 
 
 def _find_next_link(page: dict[str, Any]) -> dict[str, Any] | None:

@@ -148,3 +148,18 @@ def test_error_response_body_is_truncated() -> None:
 
     assert message.endswith("... [truncated]")
     assert len(message) < crawler.MAX_ERROR_BODY_LENGTH + 200
+
+
+def test_crawl_error_does_not_recommend_resume_past_catalog_limit() -> None:
+    response = requests.Response()
+    response.status_code = 422
+    response._content = (
+        b'{"error":{"code":422,"message":"startRecord can not exceed 100000."}}'
+    )
+    error = requests.HTTPError("unprocessable content", response=response)
+
+    message = str(crawler.CrawlError(13, 100_000, 100_000, error))
+
+    assert "limits a single search to 100,000 records" in message
+    assert "disjoint CQL2 filters" in message
+    assert "stac-dupes crawl --run-id 13" not in message

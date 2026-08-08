@@ -26,6 +26,19 @@ def test_sensing_times_uses_interval() -> None:
     assert start < end
 
 
+def test_sensing_times_prefers_interval_over_datetime() -> None:
+    start = datetime(2024, 1, 2, 3, 4, 5, tzinfo=UTC)
+    end = datetime(2024, 1, 2, 3, 4, 25, tzinfo=UTC)
+
+    assert sensing_times(
+        {
+            "datetime": "2024-01-02T03:04:05Z",
+            "start_datetime": "2024-01-02T03:04:05Z",
+            "end_datetime": "2024-01-02T03:04:25Z",
+        }
+    ) == (start, end)
+
+
 def test_processing_baseline_preserves_text_version() -> None:
     assert processing_baseline({"version": "02"}) == "02"
 

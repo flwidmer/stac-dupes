@@ -78,6 +78,11 @@ poetry run stac-dupes crawl --run-id 12 --re-crawl
 Items are upserted by `(catalog_url, stac_id)`, so both paths are idempotent. A
 completed run is a no-op unless `--re-crawl` is supplied.
 
+The normalized `sensing_start` and `sensing_end` columns prefer the STAC Item's
+explicit `properties.start_datetime` and `properties.end_datetime` interval.
+For point observations without a complete interval, both columns use
+`properties.datetime`.
+
 The normalized `processing_baseline` column is populated from the STAC Item's
 `properties.version` value. Different processing baselines are excluded from
 duplicate candidates. Two items without a baseline may still be candidates.

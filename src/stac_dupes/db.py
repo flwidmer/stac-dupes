@@ -233,14 +233,16 @@ def sensing_times(
     properties: dict[str, Any],
 ) -> tuple[datetime | None, datetime | None]:
     """Extract an Item's instant or interval as timezone-aware datetimes."""
+    start = properties.get("start_datetime")
+    end = properties.get("end_datetime")
+    if start and end:
+        return _parse_datetime(start), _parse_datetime(end)
+
     instant = properties.get("datetime")
     if instant:
         parsed = _parse_datetime(instant)
         return parsed, parsed
-    return (
-        _parse_datetime(properties.get("start_datetime")),
-        _parse_datetime(properties.get("end_datetime")),
-    )
+    return _parse_datetime(start), _parse_datetime(end)
 
 
 def processing_baseline(properties: dict[str, Any]) -> str | None:

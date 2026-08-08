@@ -110,10 +110,14 @@ def interactive(database_url: str) -> None:
     url = click.prompt("STAC API URL", type=str)
     query = click.prompt("CQL2 JSON or @file", type=str)
     collection_text = click.prompt(
-        "Collection IDs (comma-separated, blank for all)", default="", show_default=False
+        "Collection IDs (comma-separated, blank for all)",
+        default="",
+        show_default=False,
     )
     page_size = click.prompt("Page size", default=100, type=click.IntRange(min=1))
-    collections = [value.strip() for value in collection_text.split(",") if value.strip()]
+    collections = [
+        value.strip() for value in collection_text.split(",") if value.strip()
+    ]
 
     _run_crawl(
         database_url=database_url,

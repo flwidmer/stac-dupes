@@ -1,10 +1,10 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from stac_dupes.db import processing_baseline, product_type, sensing_times
 
 
 def test_sensing_times_uses_datetime_as_instant() -> None:
-    expected = datetime(2024, 1, 2, 3, 4, 5, tzinfo=timezone.utc)
+    expected = datetime(2024, 1, 2, 3, 4, 5, tzinfo=UTC)
 
     assert sensing_times({"datetime": "2024-01-02T03:04:05Z"}) == (
         expected,

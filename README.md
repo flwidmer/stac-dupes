@@ -18,6 +18,22 @@ The default database URL is
 `postgresql://stacdupes:stacdupes@localhost:5432/stacdupes`. Override it with
 `DATABASE_URL` or `--database-url`.
 
+## Development
+
+Run linting and verify formatting with Ruff:
+
+```shell
+poetry run ruff check .
+poetry run ruff format --check .
+```
+
+Apply automatic fixes and formatting with:
+
+```shell
+poetry run ruff check --fix .
+poetry run ruff format .
+```
+
 ## Crawl
 
 Pass a CQL2 JSON object inline:

@@ -22,6 +22,7 @@ include = ["src/stac_dupes/migrations/*.sql"]
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3"
+ruff = "^0.16.2"
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
@@ -29,3 +30,10 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py311"
+src = ["src"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

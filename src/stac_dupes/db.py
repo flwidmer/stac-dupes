@@ -33,10 +33,14 @@ def apply_migrations(connection: psycopg.Connection[Any]) -> list[str]:
             )
             """
         )
-        connection.execute("SELECT pg_advisory_xact_lock(hashtext('stac-dupes-migrations'))")
+        connection.execute(
+            "SELECT pg_advisory_xact_lock(hashtext('stac-dupes-migrations'))"
+        )
         applied = {
             row["version"]
-            for row in connection.execute("SELECT version FROM schema_migrations").fetchall()
+            for row in connection.execute(
+                "SELECT version FROM schema_migrations"
+            ).fetchall()
         }
         migration_dir = resources.files("stac_dupes.migrations")
         migrations = sorted(
@@ -84,9 +88,7 @@ def create_run(
         ).fetchone()
 
 
-def get_run(
-    connection: psycopg.Connection[Any], run_id: int
-) -> dict[str, Any] | None:
+def get_run(connection: psycopg.Connection[Any], run_id: int) -> dict[str, Any] | None:
     """Load an ingestion run by primary key."""
     with connection.transaction():
         return connection.execute(
@@ -227,7 +229,9 @@ def fail_run(connection: psycopg.Connection[Any], run_id: int, error: str) -> No
         )
 
 
-def sensing_times(properties: dict[str, Any]) -> tuple[datetime | None, datetime | None]:
+def sensing_times(
+    properties: dict[str, Any],
+) -> tuple[datetime | None, datetime | None]:
     """Extract an Item's instant or interval as timezone-aware datetimes."""
     instant = properties.get("datetime")
     if instant:

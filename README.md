@@ -101,6 +101,10 @@ For prompted input, run:
 poetry run stac-dupes interactive
 ```
 
+Interactive mode discovers collections and their queryables. It can build CQL2
+filters from advertised enum values, preflight result counts, and propose safe
+recursive partitions when a result set exceeds the catalog's accessible window.
+
 For a notebook-driven crawl, open `notebooks/crawl.ipynb`. It contains editable
 catalog and CQL2 settings and can start, resume, or re-crawl an ingestion run:
 

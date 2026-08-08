@@ -72,3 +72,118 @@ def test_crawl_with_query_uses_search_mode(monkeypatch) -> None:
 
     assert result.exit_code == 0
     assert arguments["crawl_mode"] == cli.crawler.SEARCH_MODE
+
+
+def test_interactive_all_uses_collection_mode_when_result_fits(monkeypatch) -> None:
+    arguments = {}
+    monkeypatch.setattr(cli.catalog, "collection_ids", lambda url: ["example"])
+    monkeypatch.setattr(
+        cli.catalog, "collection_window", lambda url, collection: (90, 100)
+    )
+    monkeypatch.setattr(cli, "_run_crawl", lambda **kwargs: arguments.update(kwargs))
+
+    result = CliRunner().invoke(
+        cli.main,
+        ["interactive"],
+        input="https://example.test\nexample\nall\n100\n",
+    )
+
+    assert result.exit_code == 0
+    assert arguments["crawl_mode"] == cli.crawler.COLLECTION_ITEMS_MODE
+    assert arguments["collections"] == ["example"]
+
+
+def test_interactive_builds_filter_from_queryable_enum(monkeypatch) -> None:
+    arguments = {}
+    monkeypatch.setattr(cli.catalog, "collection_ids", lambda url: ["example"])
+    monkeypatch.setattr(
+        cli.catalog,
+        "queryables",
+        lambda url, collection: {
+            "product:type": {
+                "title": "Product type",
+                "enum": ["S1", "S2"],
+            }
+        },
+    )
+    monkeypatch.setattr(cli.catalog, "count_search", lambda *args: 50)
+    monkeypatch.setattr(
+        cli.catalog, "collection_window", lambda url, collection: (200, 100)
+    )
+    monkeypatch.setattr(cli, "_run_crawl", lambda **kwargs: arguments.update(kwargs))
+
+    result = CliRunner().invoke(
+        cli.main,
+        ["interactive"],
+        input="https://example.test\nexample\nfilters\n100\nproduct:type\nS1\n",
+    )
+
+    assert result.exit_code == 0
+    assert arguments["cql2_filter"] == {
+        "op": "=",
+        "args": [{"property": "product:type"}, "S1"],
+    }
+    assert arguments["crawl_mode"] == cli.crawler.SEARCH_MODE
+
+
+def test_interactive_proposes_partitions_for_oversized_collection(monkeypatch) -> None:
+    arguments = {}
+    monkeypatch.setattr(cli.catalog, "collection_ids", lambda url: ["example"])
+    monkeypatch.setattr(
+        cli.catalog, "collection_window", lambda url, collection: (250, 100)
+    )
+    monkeypatch.setattr(
+        cli,
+        "_run_partition_plan",
+        lambda **kwargs: arguments.update(kwargs),
+    )
+
+    result = CliRunner().invoke(
+        cli.main,
+        ["interactive"],
+        input="https://example.test\nexample\nall\n100\n",
+    )
+
+    assert result.exit_code == 0
+    assert arguments["matched"] == 250
+    assert arguments["result_limit"] == 100
+    assert arguments["base_filter"] is None
+
+
+def test_collection_limit_error_includes_suggested_partitions(monkeypatch) -> None:
+    class Connection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args) -> None:
+            return None
+
+    def fail_crawl(*args, **kwargs):
+        limit_error = cli.crawler.CatalogResultLimitError(250, 100)
+        raise cli.crawler.CrawlError(12, 0, 0, limit_error) from limit_error
+
+    partition_filter = {
+        "op": "=",
+        "args": [{"property": "product:type"}, "S1"],
+    }
+    monkeypatch.setattr(cli.db, "connect", lambda url: Connection())
+    monkeypatch.setattr(cli.crawler, "crawl", fail_crawl)
+    monkeypatch.setattr(
+        cli,
+        "_suggested_partitions",
+        lambda *args: [cli.catalog.QueryPartition(partition_filter, 90)],
+    )
+
+    with pytest.raises(click.ClickException, match="Suggested filtered runs") as raised:
+        cli._run_crawl(
+            database_url="postgresql://example",
+            catalog_url="https://example.test",
+            cql2_filter={},
+            collections=["example"],
+            page_size=100,
+            crawl_mode=cli.crawler.COLLECTION_ITEMS_MODE,
+            run_id=None,
+            re_crawl=False,
+        )
+
+    assert "product:type=S1: 90 item(s)" in str(raised.value)

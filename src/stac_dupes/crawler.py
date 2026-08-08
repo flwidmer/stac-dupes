@@ -15,6 +15,28 @@ from tqdm import tqdm
 from stac_dupes import db
 
 INVALID_TOKEN_ATTEMPTS = 5
+MAX_ERROR_BODY_LENGTH = 2_000
+
+
+class CrawlError(RuntimeError):
+    """A crawl failure with checkpoint and restart information."""
+
+    def __init__(
+        self,
+        run_id: int,
+        seen: int,
+        ingested: int,
+        error: Exception,
+    ) -> None:
+        details = [
+            f"Crawl run {run_id} failed.",
+            f"Last saved checkpoint: {seen} item(s) seen, {ingested} item(s) ingested.",
+            _describe_error(error),
+            "Resume from the last saved checkpoint with:",
+            f"  stac-dupes crawl --run-id {run_id}",
+        ]
+        super().__init__("\n".join(details))
+        self.run_id = run_id
 
 
 @dataclass(frozen=True)
@@ -63,6 +85,8 @@ def crawl(
     state = run["state"]
     seen = int(state.get("seen", 0))
     ingested = int(state.get("ingested", 0))
+    checkpoint_seen = seen
+    checkpoint_ingested = ingested
     matched = state.get("matched")
     next_link = state.get("next_link")
     search_body = _search_body(run)
@@ -101,12 +125,20 @@ def crawl(
                 ingested=ingested,
                 matched=matched,
             )
+            checkpoint_seen = seen
+            checkpoint_ingested = ingested
             progress.update(len(page_items))
 
         db.finish_run(connection, run_id)
     except Exception as error:
-        db.fail_run(connection, run_id, str(error))
-        raise
+        crawl_error = CrawlError(
+            run_id,
+            checkpoint_seen,
+            checkpoint_ingested,
+            error,
+        )
+        db.fail_run(connection, run_id, str(crawl_error))
+        raise crawl_error from error
     finally:
         progress.close()
 
@@ -188,6 +220,37 @@ def _is_invalid_token_response(response: requests.Response) -> bool:
     return isinstance(error, dict) and str(error.get("message", "")).startswith(
         "Invalid token:"
     )
+
+
+def _describe_error(error: Exception) -> str:
+    """Return actionable request details without exposing request headers or bodies."""
+    details = [f"Cause: {type(error).__name__}: {error}"]
+    if not isinstance(error, requests.RequestException):
+        return "\n".join(details)
+
+    response = error.response
+    request = error.request or (response.request if response is not None else None)
+    if request is not None:
+        details.append(f"Request: {request.method} {request.url}")
+    if response is not None:
+        status = f"{response.status_code} {response.reason or ''}".rstrip()
+        details.append(f"Response: HTTP {status}")
+        request_id = next(
+            (
+                response.headers[name]
+                for name in ("x-request-id", "x-amzn-requestid", "traceparent")
+                if name in response.headers
+            ),
+            None,
+        )
+        if request_id:
+            details.append(f"Request ID: {request_id}")
+        body = response.text.strip()
+        if body:
+            if len(body) > MAX_ERROR_BODY_LENGTH:
+                body = f"{body[:MAX_ERROR_BODY_LENGTH]}... [truncated]"
+            details.append(f"Response body:\n{body}")
+    return "\n".join(details)
 
 
 def _find_next_link(page: dict[str, Any]) -> dict[str, Any] | None:

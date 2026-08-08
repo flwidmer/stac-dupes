@@ -114,3 +114,37 @@ def test_request_link_does_not_retry_other_bad_requests(monkeypatch) -> None:
         crawler._request_link(Session(), {"href": response.url}, {})
 
     assert calls == 1
+
+
+def test_crawl_error_includes_http_details_and_resume_command() -> None:
+    request = requests.Request("POST", "https://example.test/search").prepare()
+    response = requests.Response()
+    response.status_code = 503
+    response.reason = "Service Unavailable"
+    response.request = request
+    response.headers["x-request-id"] = "request-123"
+    response._content = b'{"error":"temporarily unavailable"}'
+    error = requests.HTTPError("server rejected the request", response=response)
+
+    message = str(crawler.CrawlError(42, 300, 298, error))
+
+    assert "Crawl run 42 failed." in message
+    assert "Last saved checkpoint: 300 item(s) seen, 298 item(s) ingested." in message
+    assert "Cause: HTTPError: server rejected the request" in message
+    assert "Request: POST https://example.test/search" in message
+    assert "Response: HTTP 503 Service Unavailable" in message
+    assert "Request ID: request-123" in message
+    assert 'Response body:\n{"error":"temporarily unavailable"}' in message
+    assert "stac-dupes crawl --run-id 42" in message
+
+
+def test_error_response_body_is_truncated() -> None:
+    response = requests.Response()
+    response.status_code = 500
+    response._content = b"x" * (crawler.MAX_ERROR_BODY_LENGTH + 1)
+    error = requests.HTTPError("failed", response=response)
+
+    message = crawler._describe_error(error)
+
+    assert message.endswith("... [truncated]")
+    assert len(message) < crawler.MAX_ERROR_BODY_LENGTH + 200

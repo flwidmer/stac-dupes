@@ -83,12 +83,32 @@ poetry run stac-dupes interactive
 
 ## Explore duplicates
 
-`sql/checks.sql` contains starting queries for temporal and geometry overlap,
-exact geometry/time matches, and reused IDs across catalogs. Run them manually,
-for example:
+`notebooks/duplicate_checks.ipynb` contains starting queries for temporal and
+geometry overlap, exact geometry/time matches, and reused IDs across catalogs.
+With PostGIS running and initialized, start JupyterLab from the host:
 
 ```shell
-docker compose exec -T db psql -U stacdupes -d stacdupes < sql/checks.sql
+poetry run jupyter lab
+```
+
+The notebook uses `DATABASE_URL`, or the default connection from Setup, and
+limits query results to 100 rows for interactive exploration. To execute it
+headlessly and write the result outside the repository:
+
+```shell
+poetry run jupyter nbconvert \
+  --to notebook \
+  --execute notebooks/duplicate_checks.ipynb \
+  --output-dir /tmp \
+  --output duplicate_checks.executed.ipynb
+```
+
+Notebook outputs are not committed. Clear them before committing changes:
+
+```shell
+poetry run jupyter nbconvert \
+  --clear-output \
+  --inplace notebooks/duplicate_checks.ipynb
 ```
 
 These queries are deliberately not part of the CLI yet. See `PLAN.md` for the

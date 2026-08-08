@@ -59,15 +59,16 @@ GROUP BY collection_id, product_type, processing_baseline
 ORDER BY collection_id, product_type, processing_baseline;
 ```
 
-Run the exploratory duplicate checks from the host:
+Run the exploratory duplicate checks from the host in JupyterLab:
 
 ```shell
-docker compose exec -T db psql -U stacdupes -d stacdupes < sql/checks.sql
+poetry run jupyter lab notebooks/duplicate_checks.ipynb
 ```
 
-These checks only compare items with the same processing baseline. Two missing
-baselines compare as equal; a missing and a known baseline do not. Product types
-must match under the same rule.
+The notebook limits displayed results to 100 rows. These checks only compare
+items with the same processing baseline. Two missing baselines compare as equal;
+a missing and a known baseline do not. Product types must match under the same
+rule.
 
 ## Stop PostGIS
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shlex
 from pathlib import Path
 from typing import Any
 
@@ -299,10 +300,7 @@ def _run_partition_plan(
         f"Proposed {len(partitions)} partition(s):"
     )
     for partition in partitions:
-        click.echo(
-            f"  {catalog.describe_filter(partition.cql2_filter)}: "
-            f"{partition.count:,} item(s)"
-        )
+        click.echo(_format_partition(partition))
     if not click.confirm("Start all proposed crawl runs?", default=False):
         return
     for partition in partitions:
@@ -378,9 +376,7 @@ def _run_crawl(
                     limit_error.limit,
                 )
                 suggestions = "\n".join(
-                    f"  {catalog.describe_filter(partition.cql2_filter)}: "
-                    f"{partition.count:,} item(s)"
-                    for partition in partitions
+                    _format_partition(partition) for partition in partitions
                 )
                 message = f"{message}\nSuggested filtered runs:\n{suggestions}"
             except (requests.RequestException, KeyError, ValueError):
@@ -401,6 +397,15 @@ def _find_catalog_limit_error(
             return current
         current = current.__cause__
     return None
+
+
+def _format_partition(partition: catalog.QueryPartition) -> str:
+    cql2_json = json.dumps(partition.cql2_filter, separators=(",", ":"))
+    return (
+        f"  {catalog.describe_filter(partition.cql2_filter)}: "
+        f"{partition.count:,} item(s)\n"
+        f"    --query {shlex.quote(cql2_json)}"
+    )
 
 
 if __name__ == "__main__":

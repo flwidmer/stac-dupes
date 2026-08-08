@@ -186,4 +186,29 @@ def test_collection_limit_error_includes_suggested_partitions(monkeypatch) -> No
             re_crawl=False,
         )
 
-    assert "product:type=S1: 90 item(s)" in str(raised.value)
+    message = str(raised.value)
+    assert "product:type=S1: 90 item(s)" in message
+    compact_filter = json.dumps(partition_filter, separators=(",", ":"))
+    assert f"--query '{compact_filter}'" in message
+
+
+def test_format_partition_includes_direct_cql2_query() -> None:
+    partition = cli.catalog.QueryPartition(
+        {
+            "op": "and",
+            "args": [
+                {"op": "=", "args": [{"property": "product:type"}, "S1"]},
+                {
+                    "op": "=",
+                    "args": [{"property": "sat:orbit_state"}, "ASCENDING"],
+                },
+            ],
+        },
+        50_368,
+    )
+
+    output = cli._format_partition(partition)
+
+    assert "product:type=S1, sat:orbit_state=ASCENDING: 50,368 item(s)" in output
+    compact_filter = json.dumps(partition.cql2_filter, separators=(",", ":"))
+    assert output.endswith(f"--query '{compact_filter}'")

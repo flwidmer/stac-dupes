@@ -1,0 +1,31 @@
+[project]
+name = "stac-dupes"
+version = "0.1.0"
+description = "Crawl STAC search results into PostGIS for duplicate analysis"
+authors = []
+readme = "README.md"
+requires-python = ">=3.11,<4.0"
+dependencies = [
+    "click>=8.1,<9.0",
+    "psycopg[binary]>=3.2,<4.0",
+    "pystac-client>=0.9,<0.10",
+    "requests>=2.32,<3.0",
+    "tqdm>=4.67,<5.0",
+]
+
+[project.scripts]
+stac-dupes = "stac_dupes.cli:main"
+
+[tool.poetry]
+packages = [{ include = "stac_dupes", from = "src" }]
+include = ["src/stac_dupes/migrations/*.sql"]
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.3"
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,19 @@
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_DB: stacdupes
+      POSTGRES_USER: stacdupes
+      POSTGRES_PASSWORD: stacdupes
+    ports:
+      - "5432:5432"
+    volumes:
+      - stac-dupes-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stacdupes -d stacdupes"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  stac-dupes-data:

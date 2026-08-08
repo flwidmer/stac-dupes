@@ -6,10 +6,10 @@ and recomputed later without crawling the source again.
 
 ## Setup
 
-Requirements: Python 3.11+, Poetry, Docker, and Docker Compose.
+Requirements: Python 3.11+, Make, curl, Docker, and Docker Compose.
 
 ```shell
-poetry install
+make install
 docker compose up -d
 poetry run stac-dupes init-db
 ```
@@ -23,7 +23,7 @@ The default database URL is
 Run linting and verify formatting with Ruff:
 
 ```shell
-poetry run ruff check .
+make lint
 poetry run ruff format --check .
 ```
 

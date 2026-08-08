@@ -67,15 +67,16 @@ def create_run(
     cql2_filter: dict[str, Any],
     collections: Sequence[str],
     page_size: int,
+    crawl_mode: str = "search",
 ) -> dict[str, Any]:
     """Create and return a new ingestion run."""
     with connection.transaction():
         return connection.execute(
             """
             INSERT INTO ingest_runs (
-                catalog_url, cql2_filter, collections, page_size, state
+                catalog_url, cql2_filter, collections, page_size, crawl_mode, state
             )
-            VALUES (%s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s)
             RETURNING *
             """,
             (
@@ -83,6 +84,7 @@ def create_run(
                 Jsonb(cql2_filter),
                 Jsonb(list(collections)),
                 page_size,
+                crawl_mode,
                 Jsonb({"seen": 0, "ingested": 0}),
             ),
         ).fetchone()

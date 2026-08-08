@@ -7,6 +7,7 @@ import time
 from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import quote
 
 import psycopg
 import requests
@@ -17,6 +18,8 @@ from stac_dupes import db
 
 INVALID_TOKEN_ATTEMPTS = 5
 MAX_ERROR_BODY_LENGTH = 2_000
+SEARCH_MODE = "search"
+COLLECTION_ITEMS_MODE = "collection-items"
 START_RECORD_LIMIT = re.compile(
     r"startRecord\s+can(?:not| not)\s+exceed\s+(\d+)", re.IGNORECASE
 )
@@ -27,8 +30,8 @@ class CatalogResultLimitError(ValueError):
 
     def __init__(self, matched: int, limit: int) -> None:
         super().__init__(
-            f"Search matches {matched} items, but the catalog only allows access to "
-            f"the first {limit}."
+            f"Result set contains {matched} items, but the catalog only allows "
+            f"access to the first {limit}."
         )
         self.matched = matched
         self.limit = limit
@@ -70,6 +73,7 @@ def crawl(
     cql2_filter: dict[str, Any] | None = None,
     collections: list[str] | None = None,
     page_size: int = 100,
+    crawl_mode: str = SEARCH_MODE,
     run_id: int | None = None,
     re_crawl: bool = False,
     show_progress: bool = True,
@@ -78,12 +82,19 @@ def crawl(
     if run_id is None:
         if catalog_url is None or cql2_filter is None:
             raise ValueError("catalog_url and cql2_filter are required for a new run")
+        if crawl_mode == COLLECTION_ITEMS_MODE and (
+            cql2_filter or len(collections or []) != 1
+        ):
+            raise ValueError(
+                "collection-items mode requires one collection and no CQL2 filter"
+            )
         run = db.create_run(
             connection,
             catalog_url.rstrip("/"),
             cql2_filter,
             collections or [],
             page_size,
+            crawl_mode,
         )
     else:
         run = db.get_run(connection, run_id)
@@ -161,6 +172,13 @@ def crawl(
 
 
 def _initial_pages(run: dict[str, Any]) -> Iterator[dict[str, Any]]:
+    if run.get("crawl_mode", SEARCH_MODE) == COLLECTION_ITEMS_MODE:
+        yield from _initial_collection_pages(run)
+        return
+    yield from _initial_search_pages(run)
+
+
+def _initial_search_pages(run: dict[str, Any]) -> Iterator[dict[str, Any]]:
     client = Client.open(run["catalog_url"])
     pages = _search_pages(client, run)
     first_page = next(pages, None)
@@ -183,6 +201,21 @@ def _initial_pages(run: dict[str, Any]) -> Iterator[dict[str, Any]]:
             search_body,
             start_record=len(first_page.get("features") or []) + 1,
         )
+
+
+def _initial_collection_pages(run: dict[str, Any]) -> Iterator[dict[str, Any]]:
+    collection = quote(run["collections"][0], safe="")
+    items_link = {
+        "href": f"{run['catalog_url']}/collections/{collection}/items",
+        "body": {"limit": run["page_size"]},
+    }
+    first_page = _request_link(requests.Session(), items_link, {})
+    _check_collection_result_window(first_page)
+
+    yield first_page
+    next_link = _find_next_link(first_page)
+    if next_link is not None:
+        yield from _pages_from_link(next_link, {})
 
 
 def _search_pages(client: Client, run: dict[str, Any]) -> Iterator[dict[str, Any]]:
@@ -307,6 +340,27 @@ def _check_result_window(page: dict[str, Any], search_body: dict[str, Any]) -> b
     return True
 
 
+def _check_collection_result_window(page: dict[str, Any]) -> None:
+    """Reject collection listings whose advertised last page is inaccessible."""
+    matched = page.get("numberMatched")
+    last_link = _find_link(page, "last")
+    if not isinstance(matched, int) or last_link is None:
+        return
+    try:
+        response = requests.request(
+            method=str(last_link.get("method", "GET")).upper(),
+            url=last_link["href"],
+            headers=last_link.get("headers"),
+            timeout=60,
+        )
+    except requests.RequestException:
+        return
+
+    limit = _start_record_limit(response)
+    if limit is not None and matched > limit:
+        raise CatalogResultLimitError(matched, limit)
+
+
 def _describe_error(error: Exception) -> str:
     """Return actionable request details without exposing request headers or bodies."""
     details = [f"Cause: {type(error).__name__}: {error}"]
@@ -342,9 +396,9 @@ def _restart_guidance(run_id: int, error: Exception) -> str:
     limit = _result_limit_from_error(error)
     if limit is not None:
         return (
-            f"This catalog limits a single search to {limit:,} records, so resuming "
-            "or re-crawling this run will fail again. Start new runs with disjoint "
-            f"CQL2 filters that each match no more than {limit:,} items."
+            f"This catalog limits a single result set to {limit:,} records, so "
+            "resuming or re-crawling this run will fail again. Start new filtered "
+            f"runs with disjoint CQL2 filters that each match at most {limit:,} items."
         )
     return (
         "Resume from the last saved checkpoint with:\n"
@@ -375,8 +429,12 @@ def _start_record_limit(response: requests.Response) -> int | None:
 
 
 def _find_next_link(page: dict[str, Any]) -> dict[str, Any] | None:
+    return _find_link(page, "next")
+
+
+def _find_link(page: dict[str, Any], relation: str) -> dict[str, Any] | None:
     for link in page.get("links") or []:
-        if link.get("rel") == "next":
+        if link.get("rel") == relation:
             return link
     return None
 

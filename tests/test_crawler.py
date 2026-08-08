@@ -140,6 +140,75 @@ def test_pages_fall_back_to_offset_when_token_expires(monkeypatch) -> None:
     }
 
 
+def test_collection_pages_use_items_endpoint(monkeypatch) -> None:
+    next_link = {
+        "rel": "next",
+        "href": "https://example.test/collections/my%20collection/items?startRecord=101",
+    }
+    first_page = {"features": [{"id": "first"}], "links": [next_link]}
+    second_page = {"features": [{"id": "second"}], "links": []}
+    requested_links: list[dict[str, Any]] = []
+
+    def request_link(session: Any, link: dict, search_body: dict) -> dict:
+        requested_links.append(link)
+        return first_page
+
+    monkeypatch.setattr(crawler, "_request_link", request_link)
+    monkeypatch.setattr(
+        crawler,
+        "_pages_from_link",
+        lambda link, search_body: iter([second_page]),
+    )
+    monkeypatch.setattr(crawler, "_check_collection_result_window", lambda page: None)
+    run = {
+        "crawl_mode": crawler.COLLECTION_ITEMS_MODE,
+        "catalog_url": "https://example.test",
+        "collections": ["my collection"],
+        "page_size": 100,
+    }
+
+    assert list(crawler._initial_pages(run)) == [first_page, second_page]
+    assert requested_links == [
+        {
+            "href": "https://example.test/collections/my%20collection/items",
+            "body": {"limit": 100},
+        }
+    ]
+
+
+def test_collection_pages_stop_when_last_link_exceeds_cap(monkeypatch) -> None:
+    page = {
+        "numberMatched": 239_400,
+        "links": [
+            {
+                "rel": "last",
+                "href": (
+                    "https://example.test/collections/example/items?"
+                    "limit=100&startRecord=239301"
+                ),
+            }
+        ],
+    }
+    response = requests.Response()
+    response.status_code = 422
+    response._content = b'{"error":{"message":"startRecord can not exceed 100000."}}'
+    request_args: dict[str, Any] = {}
+
+    def request(**kwargs: Any) -> requests.Response:
+        request_args.update(kwargs)
+        return response
+
+    monkeypatch.setattr(crawler.requests, "request", request)
+
+    with pytest.raises(
+        crawler.CatalogResultLimitError,
+        match="contains 239400 items.*first 100000",
+    ):
+        crawler._check_collection_result_window(page)
+
+    assert request_args["url"].endswith("startRecord=239301")
+
+
 def test_initial_pages_stop_before_ingestion_when_results_exceed_cap(
     monkeypatch,
 ) -> None:
@@ -181,7 +250,7 @@ def test_initial_pages_stop_before_ingestion_when_results_exceed_cap(
 
     with pytest.raises(
         crawler.CatalogResultLimitError,
-        match="matches 239354 items.*first 100000",
+        match="contains 239354 items.*first 100000",
     ) as raised:
         list(crawler._initial_pages(run))
 
@@ -283,6 +352,6 @@ def test_crawl_error_does_not_recommend_resume_past_catalog_limit() -> None:
 
     message = str(crawler.CrawlError(13, 100_000, 100_000, error))
 
-    assert "limits a single search to 100,000 records" in message
+    assert "limits a single result set to 100,000 records" in message
     assert "disjoint CQL2 filters" in message
     assert "stac-dupes crawl --run-id 13" not in message

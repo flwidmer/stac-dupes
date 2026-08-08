@@ -36,13 +36,19 @@ poetry run ruff format .
 
 ## Crawl
 
-To crawl every item in a collection without a CQL2 filter:
+To crawl every item in one collection without a CQL2 filter, omit `--query`.
+This uses the collection's `/collections/{id}/items` endpoint and its explicit
+pagination links instead of search tokens:
 
 ```shell
 poetry run stac-dupes crawl \
   --url https://example.test/stac \
   --collection sentinel-2
 ```
+
+If the collection exceeds a catalog result-window limit, the crawl stops before
+ingesting its first page. Use disjoint filtered searches to partition such a
+collection into result sets below the reported limit.
 
 Pass a CQL2 JSON object inline:
 

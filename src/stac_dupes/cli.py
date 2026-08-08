@@ -86,13 +86,21 @@ def crawl_command(
             raise click.UsageError("--url is required for a new run")
         if query is None and not collections:
             raise click.UsageError("--query or --collection is required for a new run")
+        if query is None and len(collections) != 1:
+            raise click.UsageError(
+                "exactly one --collection is required without --query"
+            )
         cql2_filter = parse_query(query) if query is not None else {}
+        crawl_mode = (
+            crawler.SEARCH_MODE if query is not None else crawler.COLLECTION_ITEMS_MODE
+        )
     else:
         if url is not None or query is not None or collections:
             raise click.UsageError(
                 "--url, --query, and --collection cannot be used with --run-id"
             )
         cql2_filter = None
+        crawl_mode = None
 
     _run_crawl(
         database_url=database_url,
@@ -100,6 +108,7 @@ def crawl_command(
         cql2_filter=cql2_filter,
         collections=list(collections),
         page_size=page_size,
+        crawl_mode=crawl_mode,
         run_id=run_id,
         re_crawl=re_crawl,
     )
@@ -127,6 +136,7 @@ def interactive(database_url: str) -> None:
         cql2_filter=parse_query(query),
         collections=collections,
         page_size=page_size,
+        crawl_mode=crawler.SEARCH_MODE,
         run_id=None,
         re_crawl=False,
     )
@@ -162,6 +172,7 @@ def _run_crawl(
     cql2_filter: dict[str, Any] | None,
     collections: list[str],
     page_size: int,
+    crawl_mode: str | None,
     run_id: int | None,
     re_crawl: bool,
 ) -> None:
@@ -173,6 +184,7 @@ def _run_crawl(
                 cql2_filter=cql2_filter,
                 collections=collections,
                 page_size=page_size,
+                crawl_mode=crawl_mode or crawler.SEARCH_MODE,
                 run_id=run_id,
                 re_crawl=re_crawl,
             )

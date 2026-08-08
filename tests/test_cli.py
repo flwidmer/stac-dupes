@@ -38,3 +38,37 @@ def test_crawl_accepts_collection_without_query(monkeypatch) -> None:
     assert result.exit_code == 0
     assert arguments["cql2_filter"] == {}
     assert arguments["collections"] == ["example"]
+    assert arguments["crawl_mode"] == cli.crawler.COLLECTION_ITEMS_MODE
+
+
+def test_collection_crawl_rejects_multiple_collections(monkeypatch) -> None:
+    monkeypatch.setattr(cli, "_run_crawl", lambda **kwargs: None)
+
+    result = CliRunner().invoke(
+        cli.main,
+        [
+            "crawl",
+            "--url",
+            "https://example.test",
+            "--collection",
+            "first",
+            "--collection",
+            "second",
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "exactly one --collection" in result.output
+
+
+def test_crawl_with_query_uses_search_mode(monkeypatch) -> None:
+    arguments = {}
+    monkeypatch.setattr(cli, "_run_crawl", lambda **kwargs: arguments.update(kwargs))
+
+    result = CliRunner().invoke(
+        cli.main,
+        ["crawl", "--url", "https://example.test", "--query", "{}"],
+    )
+
+    assert result.exit_code == 0
+    assert arguments["crawl_mode"] == cli.crawler.SEARCH_MODE

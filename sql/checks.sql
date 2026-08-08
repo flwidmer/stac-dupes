@@ -9,6 +9,7 @@ SELECT
 FROM items AS a
 JOIN items AS b
     ON a.id < b.id
+   AND a.processing_baseline IS NOT DISTINCT FROM b.processing_baseline
    AND tstzrange(a.sensing_start, a.sensing_end, '[]')
        && tstzrange(b.sensing_start, b.sensing_end, '[]')
    AND ST_Intersects(a.geometry, b.geometry);
@@ -22,6 +23,7 @@ SELECT
 FROM items AS a
 JOIN items AS b
     ON a.id < b.id
+   AND a.processing_baseline IS NOT DISTINCT FROM b.processing_baseline
    AND a.sensing_start IS NOT DISTINCT FROM b.sensing_start
    AND a.sensing_end IS NOT DISTINCT FROM b.sensing_end
    AND ST_Equals(a.geometry, b.geometry);
@@ -35,4 +37,5 @@ FROM items AS a
 JOIN items AS b
     ON a.id < b.id
    AND a.stac_id = b.stac_id
-   AND a.catalog_url <> b.catalog_url;
+   AND a.catalog_url <> b.catalog_url
+   AND a.processing_baseline IS NOT DISTINCT FROM b.processing_baseline;

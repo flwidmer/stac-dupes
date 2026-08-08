@@ -138,6 +138,7 @@ def ingest_page(
     for item in items:
         properties = item.get("properties") or {}
         sensing_start, sensing_end = sensing_times(properties)
+        baseline = processing_baseline(properties)
         geometry = item.get("geometry")
         item_rows.append(
             (
@@ -145,6 +146,7 @@ def ingest_page(
                 catalog_url,
                 item["id"],
                 item.get("collection"),
+                baseline,
                 json.dumps(geometry) if geometry is not None else None,
                 sensing_start,
                 sensing_end,
@@ -165,15 +167,17 @@ def ingest_page(
                     """
                     INSERT INTO items (
                         ingest_run_id, catalog_url, stac_id, collection_id,
+                        processing_baseline,
                         geometry, sensing_start, sensing_end, item
                     )
                     VALUES (
-                        %s, %s, %s, %s,
+                        %s, %s, %s, %s, %s,
                         ST_SetSRID(ST_GeomFromGeoJSON(%s), 4326), %s, %s, %s
                     )
                     ON CONFLICT (catalog_url, stac_id) DO UPDATE SET
                         ingest_run_id = EXCLUDED.ingest_run_id,
                         collection_id = EXCLUDED.collection_id,
+                        processing_baseline = EXCLUDED.processing_baseline,
                         geometry = EXCLUDED.geometry,
                         sensing_start = EXCLUDED.sensing_start,
                         sensing_end = EXCLUDED.sensing_end,
@@ -230,6 +234,12 @@ def sensing_times(properties: dict[str, Any]) -> tuple[datetime | None, datetime
         _parse_datetime(properties.get("start_datetime")),
         _parse_datetime(properties.get("end_datetime")),
     )
+
+
+def processing_baseline(properties: dict[str, Any]) -> str | None:
+    """Extract the processing baseline while preserving textual versions."""
+    value = properties.get("version")
+    return str(value) if value is not None else None
 
 
 def _parse_datetime(value: str | None) -> datetime | None:

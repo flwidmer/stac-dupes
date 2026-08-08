@@ -20,6 +20,11 @@ last observed the item rather than creating another row.
 The full STAC Item document is retained in `JSONB`. Geometry and sensing-time columns are
 derived indexes for analysis; they are not the sole copy of source data.
 
+The processing baseline is normalized from `properties.version` while preserving its text
+representation (for example, `02`). It does not change item identity. Duplicate candidate
+queries require baselines to be equal using `IS NOT DISTINCT FROM`, so different baselines
+are excluded while two items with unknown baselines can still be compared.
+
 ## Migrations and future detection criteria
 
 `stac-dupes init-db` applies packaged, numbered migrations and records each migration in

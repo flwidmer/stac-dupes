@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from stac_dupes.db import sensing_times
+from stac_dupes.db import processing_baseline, sensing_times
 
 
 def test_sensing_times_uses_datetime_as_instant() -> None:
@@ -24,3 +24,11 @@ def test_sensing_times_uses_interval() -> None:
     assert start is not None
     assert end is not None
     assert start < end
+
+
+def test_processing_baseline_preserves_text_version() -> None:
+    assert processing_baseline({"version": "02"}) == "02"
+
+
+def test_processing_baseline_allows_missing_version() -> None:
+    assert processing_baseline({}) is None

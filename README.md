@@ -53,6 +53,10 @@ poetry run stac-dupes crawl --run-id 12 --re-crawl
 Items are upserted by `(catalog_url, stac_id)`, so both paths are idempotent. A
 completed run is a no-op unless `--re-crawl` is supplied.
 
+The normalized `processing_baseline` column is populated from the STAC Item's
+`properties.version` value. Different processing baselines are excluded from
+duplicate candidates. Two items without a baseline may still be candidates.
+
 For prompted input, run:
 
 ```shell
@@ -71,3 +75,5 @@ docker compose exec -T db psql -U stacdupes -d stacdupes < sql/checks.sql
 
 These queries are deliberately not part of the CLI yet. See `PLAN.md` for the
 future versioned-criteria and migration design.
+
+`notes.md` contains the current MAAP Biomass ingestion and inspection commands.

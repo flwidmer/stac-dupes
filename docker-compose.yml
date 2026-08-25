@@ -39,6 +39,7 @@ services:
       - traefik.http.services.cloudbeaver.loadbalancer.server.port=8978
     volumes:
       - cloudbeaver-data:/opt/cloudbeaver/workspace
+      - ./cloudbeaver-init.sql:/opt/cloudbeaver/workspace/General/scripts/init-db-connection.sql:ro
     depends_on:
       db:
         condition: service_healthy

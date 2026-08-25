@@ -1,19 +1,42 @@
 services:
+  traefik:
+    image: traefik:v3
+    command:
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.websecure.address=:443
+    ports:
+      - "127.0.0.1:8443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
   db:
     image: postgis/postgis:16-3.4
     environment:
-      POSTGRES_DB: stacdupes
-      POSTGRES_USER: stacdupes
-      POSTGRES_PASSWORD: stacdupes
+      POSTGRES_DB: ${POSTGRES_DB:-stacdupes}
+      POSTGRES_USER: ${POSTGRES_USER:-stacdupes}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-stacdupes}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - stac-dupes-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U stacdupes -d stacdupes"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-stacdupes} -d ${POSTGRES_DB:-stacdupes}"]
       interval: 5s
       timeout: 5s
       retries: 10
+
+  cloudbeaver:
+    image: dbeaver/cloudbeaver:latest
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.cloudbeaver.rule=Host(`localhost`)
+      - traefik.http.routers.cloudbeaver.entrypoints=websecure
+      - traefik.http.routers.cloudbeaver.tls=true
+      - traefik.http.services.cloudbeaver.loadbalancer.server.port=8978
+    depends_on:
+      db:
+        condition: service_healthy
 
 volumes:
   stac-dupes-data:

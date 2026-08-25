@@ -28,15 +28,21 @@ services:
 
   cloudbeaver:
     image: dbeaver/cloudbeaver:latest
+    environment:
+      CB_ADMIN_USER: ${CLOUDBEAVER_ADMIN_USER:-admin}
+      CB_ADMIN_PASSWORD: ${CLOUDBEAVER_ADMIN_PASSWORD:-admin}
     labels:
       - traefik.enable=true
       - traefik.http.routers.cloudbeaver.rule=Host(`localhost`)
       - traefik.http.routers.cloudbeaver.entrypoints=websecure
       - traefik.http.routers.cloudbeaver.tls=true
       - traefik.http.services.cloudbeaver.loadbalancer.server.port=8978
+    volumes:
+      - cloudbeaver-data:/opt/cloudbeaver/workspace
     depends_on:
       db:
         condition: service_healthy
 
 volumes:
   stac-dupes-data:
+  cloudbeaver-data:
